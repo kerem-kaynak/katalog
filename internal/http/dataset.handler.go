@@ -33,7 +33,6 @@ func GetDatasets(ctx *appcontext.Context) gin.HandlerFunc {
 			return
 		}
 
-		// Add table count to each dataset
 		var response []map[string]interface{}
 		for _, dataset := range datasets {
 			response = append(response, map[string]interface{}{

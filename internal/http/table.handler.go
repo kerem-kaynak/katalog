@@ -33,7 +33,33 @@ func GetTables(ctx *appcontext.Context) gin.HandlerFunc {
 			return
 		}
 
-		// Add column count to each table
+		var response []map[string]interface{}
+		for _, table := range tables {
+			response = append(response, map[string]interface{}{
+				"id":           table.ID,
+				"name":         table.Name,
+				"description":  table.Description,
+				"dataset_id":   table.DatasetID,
+				"column_count": len(table.Columns),
+				"row_count":    table.RowCount,
+			})
+		}
+
+		c.JSON(http.StatusOK, gin.H{"tables": response})
+	}
+}
+
+func GetTablesByDatasetID(ctx *appcontext.Context) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		datasetID := c.Param("datasetID")
+
+		var tables []entity.Table
+		if err := ctx.DB.Where("dataset_id = ?", datasetID).Find(&tables).Error; err != nil {
+			ctx.Logger.Error("Failed to get tables", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get tables"})
+			return
+		}
+
 		var response []map[string]interface{}
 		for _, table := range tables {
 			response = append(response, map[string]interface{}{

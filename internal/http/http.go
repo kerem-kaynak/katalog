@@ -74,6 +74,7 @@ func (h *APIService) setupTableRoutes(group *gin.RouterGroup) {
 	tables.Use(middleware.JWTAuthMiddleware())
 
 	tables.GET("/", GetTables(h.context))
+	tables.GET("/:datasetID", GetTablesByDatasetID(h.context))
 }
 
 func (h *APIService) setupColumnRoutes(group *gin.RouterGroup) {
@@ -81,6 +82,7 @@ func (h *APIService) setupColumnRoutes(group *gin.RouterGroup) {
 	columns.Use(middleware.JWTAuthMiddleware())
 
 	columns.GET("/", GetColumns(h.context))
+	columns.GET("/:tableID", GetColumnsByTableID(h.context))
 }
 
 func (h *APIService) setupFileRoutes(group *gin.RouterGroup) {
