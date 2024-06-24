@@ -5,14 +5,20 @@ import (
 	"os"
 	"time"
 
+	"context"
+
+	"cloud.google.com/go/storage"
 	"github.com/joho/godotenv"
-	"github.com/kerem-kaynak/katalog/internal/context"
+	"github.com/kerem-kaynak/katalog/internal/appcontext"
+	"github.com/kerem-kaynak/katalog/internal/entity"
 	"go.uber.org/zap"
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
-func InitContext() (*context.Context, error) {
+func InitContext() (*appcontext.Context, error) {
 	if err := godotenv.Load(); err != nil {
 		zap.L().Warn("No .env file found, using environment variables")
 	}
@@ -28,9 +34,31 @@ func InitContext() (*context.Context, error) {
 		return nil, err
 	}
 
-	ctx := &context.Context{
+	gcsClient, err := InitGCSClient()
+	if err != nil {
+		return nil, err
+	}
+
+	oauth2Config := &oauth2.Config{
+		ClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
+		ClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
+		RedirectURL:  os.Getenv("GOOGLE_REDIRECT_URL"),
+		Scopes: []string{
+			"https://www.googleapis.com/auth/userinfo.email",
+			"https://www.googleapis.com/auth/userinfo.profile",
+		},
+		Endpoint: google.Endpoint,
+	}
+
+	ctx := &appcontext.Context{
 		DB:     db,
 		Logger: logger,
+
+		GCSClient:     gcsClient,
+		GCPProjectID:  os.Getenv("GCP_PROJECT_ID"),
+		GCSBucketName: os.Getenv("GCS_BUCKET_NAME"),
+
+		OAuth2Config: oauth2Config,
 	}
 
 	return ctx, nil
@@ -55,7 +83,12 @@ func InitDB() (*gorm.DB, error) {
 	sqlDB.SetMaxOpenConns(100)
 	sqlDB.SetConnMaxLifetime(time.Hour)
 
-	err = db.AutoMigrate()
+	err = db.Exec("CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\"").Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to enable uuid-ossp extension: %w", err)
+	}
+
+	err = db.AutoMigrate(&entity.Company{}, &entity.User{}, &entity.KeyFile{}, &entity.Dataset{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to migrate database: %w", err)
 	}
@@ -69,4 +102,13 @@ func InitLogger() (*zap.Logger, error) {
 		return nil, fmt.Errorf("failed to initialize logger: %w", err)
 	}
 	return logger, nil
+}
+
+func InitGCSClient() (*storage.Client, error) {
+	ctx := context.Background()
+	client, err := storage.NewClient(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize GCS client: %w", err)
+	}
+	return client, nil
 }

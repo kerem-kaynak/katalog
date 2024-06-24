@@ -7,13 +7,11 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// CORSMiddleware configures CORS headers based on the environment
 func CORSMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		environment := os.Getenv("ENVIRONMENT")
 
 		if environment == "production" {
-			// In production, only allow specific origins
 			allowedOrigins := strings.Split(os.Getenv("ALLOWED_ORIGINS"), ",")
 			origin := c.Request.Header.Get("Origin")
 
@@ -21,7 +19,6 @@ func CORSMiddleware() gin.HandlerFunc {
 				c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
 			}
 		} else {
-			// Allow all origins in non-production environments
 			c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
 		}
 
@@ -38,7 +35,6 @@ func CORSMiddleware() gin.HandlerFunc {
 	}
 }
 
-// contains checks if a slice contains a specific string
 func contains(slice []string, item string) bool {
 	for _, v := range slice {
 		if v == item {

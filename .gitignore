@@ -1,1 +1,7 @@
 .env
+
+docker-compose.yml
+
+*-credentials.json
+
+/static
