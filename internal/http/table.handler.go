@@ -10,7 +10,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func GetDatasets(ctx *appcontext.Context) gin.HandlerFunc {
+func GetTables(ctx *appcontext.Context) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID, err := utils.GetUserIDFromClaims(c)
 		if err != nil {
@@ -26,25 +26,26 @@ func GetDatasets(ctx *appcontext.Context) gin.HandlerFunc {
 			return
 		}
 
-		var datasets []entity.Dataset
-		if err := ctx.DB.Preload("Tables").Where("company_id = ?", user.CompanyID).Find(&datasets).Error; err != nil {
-			ctx.Logger.Error("Failed to fetch datasets", zap.Error(err))
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch datasets"})
+		var tables []entity.Table
+		if err := ctx.DB.Joins("JOIN datasets ON tables.dataset_id = datasets.id").Where("datasets.company_id = ?", user.CompanyID).Preload("Columns").Find(&tables).Error; err != nil {
+			ctx.Logger.Error("Failed to fetch tables", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch tables"})
 			return
 		}
 
-		// Add table count to each dataset
+		// Add column count to each table
 		var response []map[string]interface{}
-		for _, dataset := range datasets {
+		for _, table := range tables {
 			response = append(response, map[string]interface{}{
-				"id":          dataset.ID,
-				"name":        dataset.Name,
-				"project_id":  dataset.ProjectID,
-				"description": dataset.Description,
-				"table_count": len(dataset.Tables),
+				"id":           table.ID,
+				"name":         table.Name,
+				"description":  table.Description,
+				"dataset_id":   table.DatasetID,
+				"column_count": len(table.Columns),
+				"row_count":    table.RowCount,
 			})
 		}
 
-		c.JSON(http.StatusOK, gin.H{"datasets": response})
+		c.JSON(http.StatusOK, gin.H{"tables": response})
 	}
 }

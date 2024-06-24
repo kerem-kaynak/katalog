@@ -88,7 +88,7 @@ func InitDB() (*gorm.DB, error) {
 		return nil, fmt.Errorf("failed to enable uuid-ossp extension: %w", err)
 	}
 
-	err = db.AutoMigrate(&entity.Company{}, &entity.User{}, &entity.KeyFile{}, &entity.Dataset{})
+	err = db.AutoMigrate(&entity.Company{}, &entity.User{}, &entity.KeyFile{}, &entity.Dataset{}, &entity.Table{}, &entity.Column{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to migrate database: %w", err)
 	}

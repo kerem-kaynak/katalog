@@ -36,6 +36,7 @@ func (h *APIService) setupRoutes() {
 	h.setupTableRoutes(v1)
 	h.setupColumnRoutes(v1)
 	h.setupFileRoutes(v1)
+	h.setupSchemaRoutes(v1)
 
 	h.engine.Static("/static", "./static")
 	h.engine.GET("/", func(c *gin.Context) {
@@ -52,18 +53,35 @@ func (h *APIService) setupAuthRoutes(group *gin.RouterGroup) {
 	auth.GET("/me", middleware.JWTAuthMiddleware(), GetUserInfo(h.context))
 }
 
+func (h *APIService) setupSchemaRoutes(group *gin.RouterGroup) {
+	schema := group.Group("/schema")
+	schema.Use(middleware.JWTAuthMiddleware())
+
+	schema.POST("/", FetchSchema(h.context))
+}
+
 func (h *APIService) setupProjectRoutes(group *gin.RouterGroup) {}
 
 func (h *APIService) setupDatasetRoutes(group *gin.RouterGroup) {
 	datasets := group.Group("/datasets")
 	datasets.Use(middleware.JWTAuthMiddleware())
 
-	datasets.GET("/", FetchDatasets(h.context))
+	datasets.GET("/", GetDatasets(h.context))
 }
 
-func (h *APIService) setupTableRoutes(group *gin.RouterGroup) {}
+func (h *APIService) setupTableRoutes(group *gin.RouterGroup) {
+	tables := group.Group("/tables")
+	tables.Use(middleware.JWTAuthMiddleware())
 
-func (h *APIService) setupColumnRoutes(group *gin.RouterGroup) {}
+	tables.GET("/", GetTables(h.context))
+}
+
+func (h *APIService) setupColumnRoutes(group *gin.RouterGroup) {
+	columns := group.Group("/columns")
+	columns.Use(middleware.JWTAuthMiddleware())
+
+	columns.GET("/", GetColumns(h.context))
+}
 
 func (h *APIService) setupFileRoutes(group *gin.RouterGroup) {
 	files := group.Group("/files")
