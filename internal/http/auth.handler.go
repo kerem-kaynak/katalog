@@ -82,7 +82,7 @@ func Callback(ctx *appcontext.Context) gin.HandlerFunc {
 			return
 		}
 
-		c.Redirect(http.StatusTemporaryRedirect, "http://localhost:8080/?token="+tokenString)
+		c.Redirect(http.StatusTemporaryRedirect, "http://localhost:3000/login?token="+tokenString)
 	}
 }
 
