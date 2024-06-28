@@ -54,7 +54,7 @@ func GetTablesByDatasetID(ctx *appcontext.Context) gin.HandlerFunc {
 		datasetID := c.Param("datasetID")
 
 		var tables []entity.Table
-		if err := ctx.DB.Where("dataset_id = ?", datasetID).Find(&tables).Error; err != nil {
+		if err := ctx.DB.Where("dataset_id = ?", datasetID).Preload("Columns").Find(&tables).Error; err != nil {
 			ctx.Logger.Error("Failed to get tables", zap.Error(err))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get tables"})
 			return

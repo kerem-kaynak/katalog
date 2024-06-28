@@ -49,9 +49,10 @@ func Callback(ctx *appcontext.Context) gin.HandlerFunc {
 		}
 
 		user := struct {
-			Sub   string `json:"sub"`
-			Email string `json:"email"`
-			Name  string `json:"name"`
+			Sub     string `json:"sub"`
+			Email   string `json:"email"`
+			Name    string `json:"name"`
+			Picture string `json:"picture"`
 		}{}
 
 		if err := json.Unmarshal(body, &user); err != nil {
@@ -64,9 +65,10 @@ func Callback(ctx *appcontext.Context) gin.HandlerFunc {
 		if err := ctx.DB.Where("email = ?", user.Email).First(&dbUser).Error; err != nil {
 			companyID := uuid.MustParse("5366a36e-9bcd-46a8-b84a-4935842a1d91")
 			dbUser = entity.User{
-				Email:     user.Email,
-				Name:      user.Name,
-				CompanyID: &companyID,
+				Email:          user.Email,
+				Name:           user.Name,
+				CompanyID:      &companyID,
+				ProfilePicture: user.Picture,
 			}
 			if err := ctx.DB.Create(&dbUser).Error; err != nil {
 				ctx.Logger.Error("Failed to create user", zap.Error(err))
