@@ -37,6 +37,7 @@ func (h *APIService) setupRoutes() {
 	h.setupColumnRoutes(v1)
 	h.setupFileRoutes(v1)
 	h.setupSchemaRoutes(v1)
+	h.setupCompanyRoutes(v1)
 
 	h.engine.Static("/static", "./static")
 	h.engine.GET("/", func(c *gin.Context) {
@@ -90,4 +91,11 @@ func (h *APIService) setupFileRoutes(group *gin.RouterGroup) {
 	files.Use(middleware.JWTAuthMiddleware())
 
 	files.POST("/", UploadFile(h.context))
+}
+
+func (h *APIService) setupCompanyRoutes(group *gin.RouterGroup) {
+	companies := group.Group("/companies")
+	companies.Use(middleware.JWTAuthMiddleware())
+
+	companies.GET("/members", GetCompanyMembers(h.context))
 }

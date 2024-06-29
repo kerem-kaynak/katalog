@@ -13,4 +13,5 @@ type User struct {
 	KeyFile        *KeyFile   `json:"key_file" gorm:"foreignkey:UserID;constraint:OnDelete:CASCADE"`
 	CompanyID      *uuid.UUID `json:"company_id" gorm:"type:uuid"`
 	ProfilePicture string     `json:"profile_picture" gorm:"type:varchar(255)"`
+	Role           string     `json:"role" gorm:"type:varchar(100)"`
 }
