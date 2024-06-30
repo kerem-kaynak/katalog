@@ -58,16 +58,23 @@ func (h *APIService) setupSchemaRoutes(group *gin.RouterGroup) {
 	schema := group.Group("/schema")
 	schema.Use(middleware.JWTAuthMiddleware())
 
-	schema.POST("/", FetchSchema(h.context))
+	schema.POST("/:projectID", FetchSchema(h.context))
+	schema.GET("/:projectID/syncs", GetSyncsByProjectID(h.context))
 }
 
-func (h *APIService) setupProjectRoutes(group *gin.RouterGroup) {}
+func (h *APIService) setupProjectRoutes(group *gin.RouterGroup) {
+	projects := group.Group("/projects")
+	projects.Use(middleware.JWTAuthMiddleware())
+
+	projects.GET("/", GetProjectsByUserID(h.context))
+	projects.GET("/:projectID/hasKey", GetProjectHasKey(h.context))
+}
 
 func (h *APIService) setupDatasetRoutes(group *gin.RouterGroup) {
 	datasets := group.Group("/datasets")
 	datasets.Use(middleware.JWTAuthMiddleware())
 
-	datasets.GET("/", GetDatasets(h.context))
+	datasets.GET("/:projectID", GetDatasets(h.context))
 }
 
 func (h *APIService) setupTableRoutes(group *gin.RouterGroup) {
@@ -82,7 +89,6 @@ func (h *APIService) setupColumnRoutes(group *gin.RouterGroup) {
 	columns := group.Group("/columns")
 	columns.Use(middleware.JWTAuthMiddleware())
 
-	columns.GET("/", GetColumns(h.context))
 	columns.GET("/:tableID", GetColumnsByTableID(h.context))
 }
 
@@ -90,13 +96,13 @@ func (h *APIService) setupFileRoutes(group *gin.RouterGroup) {
 	files := group.Group("/files")
 	files.Use(middleware.JWTAuthMiddleware())
 
-	files.POST("/", UploadFile(h.context))
+	files.POST("/:projectID", UploadFile(h.context))
 }
 
 func (h *APIService) setupCompanyRoutes(group *gin.RouterGroup) {
 	companies := group.Group("/companies")
 	companies.Use(middleware.JWTAuthMiddleware())
 
+	companies.POST("/create", CreateCompany(h.context))
 	companies.GET("/members", GetCompanyMembers(h.context))
-	companies.GET("/hasKey", GetCompanyHasKey(h.context))
 }

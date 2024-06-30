@@ -9,7 +9,6 @@ type Company struct {
 	gorm.Model
 	ID       uuid.UUID `gorm:"type:uuid;default:uuid_generate_v4();primary_key"`
 	Name     string    `gorm:"type:varchar(100);unique_index"`
+	Projects []Project `gorm:"foreignKey:CompanyID"`
 	Users    []User    `gorm:"foreignKey:CompanyID"`
-	Datasets []Dataset `gorm:"foreignKey:CompanyID"`
-	KeyFile  *KeyFile  `gorm:"foreignKey:CompanyID"`
 }

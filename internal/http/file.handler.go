@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/kerem-kaynak/katalog/internal/appcontext"
 	"github.com/kerem-kaynak/katalog/internal/entity"
 	"github.com/kerem-kaynak/katalog/internal/utils"
@@ -18,6 +19,7 @@ import (
 
 func UploadFile(ctx *appcontext.Context) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		projectID := c.Param("projectID")
 		userID, err := utils.GetUserIDFromClaims(c)
 		if err != nil {
 			ctx.Logger.Error("Failed to get user ID from claims", zap.Error(err))
@@ -74,11 +76,11 @@ func UploadFile(ctx *appcontext.Context) gin.HandlerFunc {
 		fileURL := "https://storage.googleapis.com/" + bucketName + "/" + objectPath
 
 		keyFile := entity.KeyFile{
-			CompanyID: *user.CompanyID,
+			ProjectID: uuid.MustParse(projectID),
 			URL:       fileURL,
 		}
 
-		if err := ctx.DB.Where("company_id = ?", user.CompanyID).Delete(&entity.KeyFile{}).Error; err != nil {
+		if err := ctx.DB.Where("project_id = ?", projectID).Delete(&entity.KeyFile{}).Error; err != nil {
 			ctx.Logger.Error("Failed to delete existing key file", zap.Error(err))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete existing key file"})
 			return

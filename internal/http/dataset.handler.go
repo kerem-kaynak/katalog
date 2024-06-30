@@ -12,6 +12,8 @@ import (
 
 func GetDatasets(ctx *appcontext.Context) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		projectID := c.Param("projectID")
+
 		userID, err := utils.GetUserIDFromClaims(c)
 		if err != nil {
 			ctx.Logger.Error("Failed to get user ID from claims", zap.Error(err))
@@ -27,7 +29,7 @@ func GetDatasets(ctx *appcontext.Context) gin.HandlerFunc {
 		}
 
 		var datasets []entity.Dataset
-		if err := ctx.DB.Preload("Tables").Where("company_id = ?", user.CompanyID).Find(&datasets).Error; err != nil {
+		if err := ctx.DB.Preload("Tables").Where("project_id = ?", projectID).Find(&datasets).Error; err != nil {
 			ctx.Logger.Error("Failed to fetch datasets", zap.Error(err))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch datasets"})
 			return
@@ -38,7 +40,6 @@ func GetDatasets(ctx *appcontext.Context) gin.HandlerFunc {
 			response = append(response, map[string]interface{}{
 				"id":          dataset.ID,
 				"name":        dataset.Name,
-				"project_id":  dataset.ProjectID,
 				"description": dataset.Description,
 				"table_count": len(dataset.Tables),
 			})

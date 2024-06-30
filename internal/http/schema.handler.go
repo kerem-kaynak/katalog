@@ -10,6 +10,7 @@ import (
 
 	"cloud.google.com/go/bigquery"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/kerem-kaynak/katalog/internal/appcontext"
 	"github.com/kerem-kaynak/katalog/internal/entity"
 	"github.com/kerem-kaynak/katalog/internal/utils"
@@ -35,6 +36,9 @@ type ServiceAccountKey struct {
 
 func FetchSchema(ctx *appcontext.Context) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		projectIDString := c.Param("projectID")
+		projectID := uuid.MustParse(projectIDString)
+
 		userID, err := utils.GetUserIDFromClaims(c)
 		if err != nil {
 			ctx.Logger.Error("Failed to get user ID from claims", zap.Error(err))
@@ -50,7 +54,7 @@ func FetchSchema(ctx *appcontext.Context) gin.HandlerFunc {
 		}
 
 		var keyFile entity.KeyFile
-		if err := ctx.DB.Where("user_id = ?", userID).First(&keyFile).Error; err != nil {
+		if err := ctx.DB.Where("project_id = ?", projectID).First(&keyFile).Error; err != nil {
 			ctx.Logger.Error("Failed to get key file for user", zap.Error(err))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get key file for user"})
 			return
@@ -123,14 +127,13 @@ func FetchSchema(ctx *appcontext.Context) gin.HandlerFunc {
 
 				dataset := entity.Dataset{
 					Name:        ds.DatasetID,
-					ProjectID:   ds.ProjectID,
+					ProjectID:   projectID,
 					Description: meta.Description,
-					CompanyID:   user.CompanyID,
 				}
 
 				mu.Lock()
 				if err := tx.Clauses(clause.OnConflict{
-					Columns: []clause.Column{{Name: "name"}, {Name: "company_id"}},
+					Columns: []clause.Column{{Name: "name"}, {Name: "project_id"}},
 					DoUpdates: clause.Assignments(map[string]interface{}{
 						"description": meta.Description,
 						"updated_at":  time.Now(),
@@ -227,6 +230,30 @@ func FetchSchema(ctx *appcontext.Context) gin.HandlerFunc {
 			return
 		}
 
+		sync := entity.Sync{
+			ProjectID: &projectID,
+		}
+		if err := ctx.DB.Create(&sync).Error; err != nil {
+			ctx.Logger.Error("Failed to create sync", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create sync"})
+			return
+		}
+
 		c.JSON(http.StatusOK, gin.H{"message": "Schema fetched and stored successfully"})
+	}
+}
+
+func GetSyncsByProjectID(ctx *appcontext.Context) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		projectID := c.Param("projectID")
+
+		var syncs []entity.Sync
+		if err := ctx.DB.Where("project_id = ?", projectID).Order("created_at DESC").Limit(5).Find(&syncs).Error; err != nil {
+			ctx.Logger.Error("Failed to get syncs from database", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get syncs from database"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"syncs": syncs})
 	}
 }

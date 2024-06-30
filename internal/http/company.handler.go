@@ -10,6 +10,58 @@ import (
 	"go.uber.org/zap"
 )
 
+func CreateCompany(ctx *appcontext.Context) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		type createCompanyRequest struct {
+			CompanyName string `json:"companyName" binding:"required"`
+			ProjectName string `json:"projectName" binding:"required"`
+		}
+
+		var request createCompanyRequest
+
+		if err := c.BindJSON(&request); err != nil {
+			ctx.Logger.Error("Failed to bind request", zap.Error(err))
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to bind request"})
+			return
+		}
+
+		userID, err := utils.GetUserIDFromClaims(c)
+		if err != nil {
+			ctx.Logger.Error("Failed to get user ID from claims", zap.Error(err))
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+			return
+		}
+
+		company := entity.Company{
+			Name: request.CompanyName,
+		}
+
+		if err := ctx.DB.Create(&company).Error; err != nil {
+			ctx.Logger.Error("Failed to create company", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create company"})
+			return
+		}
+
+		if err := ctx.DB.Model(&entity.User{}).Where("id = ?", userID).Update("company_id", company.ID).Error; err != nil {
+			ctx.Logger.Error("Failed to update user's company ID", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update user's company ID"})
+			return
+		}
+
+		project := entity.Project{
+			Name:      request.ProjectName,
+			CompanyID: company.ID,
+		}
+
+		if err := ctx.DB.Create(&project).Error; err != nil {
+			ctx.Logger.Error("Failed to create project", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create project"})
+		}
+
+		c.JSON(http.StatusOK, gin.H{"message": "Company and project created successfully", "company_id": company.ID, "project_id": project.ID})
+	}
+}
+
 func GetCompanyMembers(ctx *appcontext.Context) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID, err := utils.GetUserIDFromClaims(c)
@@ -21,8 +73,8 @@ func GetCompanyMembers(ctx *appcontext.Context) gin.HandlerFunc {
 
 		var user entity.User
 		if err := ctx.DB.Where("id = ?", userID).First(&user).Error; err != nil {
-			ctx.Logger.Error("Failed to get user from database", zap.Error(err))
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user from database"})
+			ctx.Logger.Error("Failed to get user by ID", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user by ID"})
 			return
 		}
 
@@ -34,37 +86,5 @@ func GetCompanyMembers(ctx *appcontext.Context) gin.HandlerFunc {
 		}
 
 		c.JSON(http.StatusOK, gin.H{"members": companyMembers})
-	}
-}
-
-func GetCompanyHasKey(ctx *appcontext.Context) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		userID, err := utils.GetUserIDFromClaims(c)
-		if err != nil {
-			ctx.Logger.Error("Failed to get user ID from claims", zap.Error(err))
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user ID from claims"})
-			return
-		}
-
-		var user entity.User
-		if err := ctx.DB.Where("id = ?", userID).First(&user).Error; err != nil {
-			ctx.Logger.Error("Failed to get user from database", zap.Error(err))
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user from database"})
-			return
-		}
-
-		var company entity.Company
-		if err := ctx.DB.Preload("KeyFile").Where("id = ?", user.CompanyID).First(&company).Error; err != nil {
-			ctx.Logger.Error("Failed to get whether company has key", zap.Error(err))
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get whether company has key"})
-			return
-		}
-
-		if company.KeyFile != nil {
-			c.JSON(http.StatusOK, gin.H{"hasKey": true})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{"hasKey": false})
 	}
 }

@@ -7,7 +7,6 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/kerem-kaynak/katalog/internal/appcontext"
 	"github.com/kerem-kaynak/katalog/internal/entity"
 	"github.com/kerem-kaynak/katalog/internal/utils"
@@ -63,11 +62,9 @@ func Callback(ctx *appcontext.Context) gin.HandlerFunc {
 
 		var dbUser entity.User
 		if err := ctx.DB.Where("email = ?", user.Email).First(&dbUser).Error; err != nil {
-			companyID := uuid.MustParse("5366a36e-9bcd-46a8-b84a-4935842a1d91")
 			dbUser = entity.User{
 				Email:          user.Email,
 				Name:           user.Name,
-				CompanyID:      &companyID,
 				ProfilePicture: user.Picture,
 			}
 			if err := ctx.DB.Create(&dbUser).Error; err != nil {
@@ -84,7 +81,7 @@ func Callback(ctx *appcontext.Context) gin.HandlerFunc {
 			return
 		}
 
-		c.Redirect(http.StatusTemporaryRedirect, "http://localhost:3000/login?token="+tokenString)
+		c.Redirect(http.StatusTemporaryRedirect, "http://localhost:3000/company/create?token="+tokenString)
 	}
 }
 
