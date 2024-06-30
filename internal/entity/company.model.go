@@ -11,4 +11,5 @@ type Company struct {
 	Name     string    `gorm:"type:varchar(100);unique_index"`
 	Users    []User    `gorm:"foreignKey:CompanyID"`
 	Datasets []Dataset `gorm:"foreignKey:CompanyID"`
+	KeyFile  *KeyFile  `gorm:"foreignKey:CompanyID"`
 }

@@ -98,4 +98,5 @@ func (h *APIService) setupCompanyRoutes(group *gin.RouterGroup) {
 	companies.Use(middleware.JWTAuthMiddleware())
 
 	companies.GET("/members", GetCompanyMembers(h.context))
+	companies.GET("/hasKey", GetCompanyHasKey(h.context))
 }

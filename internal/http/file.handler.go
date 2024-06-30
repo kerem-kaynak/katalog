@@ -25,6 +25,13 @@ func UploadFile(ctx *appcontext.Context) gin.HandlerFunc {
 			return
 		}
 
+		var user entity.User
+		if err := ctx.DB.Where("id = ?", userID).First(&user).Error; err != nil {
+			ctx.Logger.Error("Failed to get user from database", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user from database"})
+			return
+		}
+
 		bucketName := ctx.GCSBucketName
 
 		file, err := c.FormFile("file")
@@ -67,11 +74,11 @@ func UploadFile(ctx *appcontext.Context) gin.HandlerFunc {
 		fileURL := "https://storage.googleapis.com/" + bucketName + "/" + objectPath
 
 		keyFile := entity.KeyFile{
-			UserID: userID,
-			URL:    fileURL,
+			CompanyID: *user.CompanyID,
+			URL:       fileURL,
 		}
 
-		if err := ctx.DB.Where("user_id = ?", userID).Delete(&entity.KeyFile{}).Error; err != nil {
+		if err := ctx.DB.Where("company_id = ?", user.CompanyID).Delete(&entity.KeyFile{}).Error; err != nil {
 			ctx.Logger.Error("Failed to delete existing key file", zap.Error(err))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete existing key file"})
 			return
