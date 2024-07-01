@@ -60,7 +60,7 @@ func FetchSchema(ctx *appcontext.Context) gin.HandlerFunc {
 			return
 		}
 
-		rc, err := ctx.GCSClient.Bucket(ctx.GCSBucketName).Object(userID.String() + "/sa_key").NewReader(context.Background())
+		rc, err := ctx.GCSClient.Bucket(ctx.GCSBucketName).Object(projectIDString + "/sa_key").NewReader(context.Background())
 		if err != nil {
 			ctx.Logger.Error("Failed to fetch key file from GCS", zap.Error(err))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch key file from GCS"})

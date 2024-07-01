@@ -57,7 +57,7 @@ func UploadFile(ctx *appcontext.Context) gin.HandlerFunc {
 		}
 		defer src.Close()
 
-		objectPath := userID.String() + "/" + "sa_key"
+		objectPath := projectID + "/" + "sa_key"
 
 		w := ctx.GCSClient.Bucket(bucketName).Object(objectPath).NewWriter(context.Background())
 

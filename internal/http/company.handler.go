@@ -79,7 +79,7 @@ func GetCompanyMembers(ctx *appcontext.Context) gin.HandlerFunc {
 		}
 
 		var companyMembers []entity.User
-		if err := ctx.DB.Where("company_id = ?", user.CompanyID).Find(&companyMembers).Error; err != nil {
+		if err := ctx.DB.Where("company_id = ? AND status = ?", user.CompanyID, "active").Find(&companyMembers).Error; err != nil {
 			ctx.Logger.Error("Failed to get team members from database", zap.Error(err))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get team members from database"})
 			return
