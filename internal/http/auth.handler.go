@@ -3,12 +3,15 @@ package http
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"os"
 
 	"github.com/gin-gonic/gin"
 	"github.com/kerem-kaynak/katalog/internal/appcontext"
 	"github.com/kerem-kaynak/katalog/internal/entity"
+	"github.com/kerem-kaynak/katalog/internal/services"
 	"github.com/kerem-kaynak/katalog/internal/utils"
 	"go.uber.org/zap"
 	"golang.org/x/oauth2"
@@ -163,7 +166,12 @@ func InviteUser(ctx *appcontext.Context) gin.HandlerFunc {
 			return
 		}
 
-		// send email here
+		loginURL := fmt.Sprintf("%s/login", os.Getenv("FRONTEND_HOST"))
+		if err := services.SendInvitationEmail(request.Email, user.Name, loginURL); err != nil {
+			ctx.Logger.Error("Failed to send email", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to send email"})
+			return
+		}
 
 		c.JSON(http.StatusOK, gin.H{"message": "User successfully invited!"})
 	}
