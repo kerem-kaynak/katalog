@@ -52,6 +52,7 @@ func (h *APIService) setupAuthRoutes(group *gin.RouterGroup) {
 	auth.GET("/callback", Callback(h.context))
 	auth.POST("/logout", Logout(h.context))
 	auth.GET("/me", middleware.JWTAuthMiddleware(), GetUserInfo(h.context))
+	auth.GET("/user/company", middleware.JWTAuthMiddleware(), GetUserInfoWithCompany(h.context))
 	auth.POST("/invite", middleware.JWTAuthMiddleware(), InviteUser(h.context))
 }
 

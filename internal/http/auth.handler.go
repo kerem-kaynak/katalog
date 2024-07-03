@@ -9,6 +9,7 @@ import (
 	"os"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/kerem-kaynak/katalog/internal/appcontext"
 	"github.com/kerem-kaynak/katalog/internal/entity"
 	"github.com/kerem-kaynak/katalog/internal/services"
@@ -125,6 +126,48 @@ func GetUserInfo(ctx *appcontext.Context) gin.HandlerFunc {
 		}
 
 		c.JSON(http.StatusOK, user)
+	}
+}
+
+type UserWithCompany struct {
+	ID             uuid.UUID `json:"id"`
+	Name           string    `json:"name"`
+	Email          string    `json:"email"`
+	ProfilePicture string    `json:"profile_picture"`
+	CompanyID      uuid.UUID `json:"company_id"`
+	Role           string    `json:"role"`
+	Status         string    `json:"status"`
+	Company        string    `json:"company"`
+}
+
+func GetUserInfoWithCompany(ctx *appcontext.Context) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID, err := utils.GetUserIDFromClaims(c)
+		if err != nil {
+			ctx.Logger.Error("Failed to get user ID from claims", zap.Error(err))
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+			return
+		}
+
+		var user entity.User
+		if err := ctx.DB.Preload("Company").First(&user, "id = ?", userID).Error; err != nil {
+			ctx.Logger.Error("Failed to find user", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to find user"})
+			return
+		}
+
+		userWithCompany := UserWithCompany{
+			ID:             user.ID,
+			Name:           user.Name,
+			Email:          user.Email,
+			ProfilePicture: user.ProfilePicture,
+			CompanyID:      *user.CompanyID,
+			Role:           user.Role,
+			Status:         user.Status,
+			Company:        user.Company.Name,
+		}
+
+		c.JSON(http.StatusOK, gin.H{"user": userWithCompany})
 	}
 }
 
