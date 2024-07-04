@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/kerem-kaynak/katalog/internal/appcontext"
 	"github.com/kerem-kaynak/katalog/internal/entity"
 	"github.com/kerem-kaynak/katalog/internal/utils"
@@ -52,6 +53,19 @@ func GetTables(ctx *appcontext.Context) gin.HandlerFunc {
 func GetTablesByDatasetID(ctx *appcontext.Context) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		datasetID := c.Param("datasetID")
+
+		userID, err := utils.GetUserIDFromClaims(c)
+		if err != nil {
+			ctx.Logger.Error("Failed to get user ID from claims", zap.Error(err))
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+			return
+		}
+
+		userHasAccess := utils.UserHasDatasetAccess(ctx, userID, uuid.MustParse(datasetID))
+		if !userHasAccess {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "User does not have access to this resource"})
+			return
+		}
 
 		var tables []entity.Table
 		if err := ctx.DB.Where("dataset_id = ?", datasetID).Preload("Columns").Find(&tables).Error; err != nil {

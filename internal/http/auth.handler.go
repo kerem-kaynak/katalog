@@ -70,6 +70,7 @@ func Callback(ctx *appcontext.Context) gin.HandlerFunc {
 				Email:          user.Email,
 				Name:           user.Name,
 				ProfilePicture: user.Picture,
+				Role:           "Admin",
 			}
 			if err := ctx.DB.Create(&dbUser).Error; err != nil {
 				ctx.Logger.Error("Failed to create user", zap.Error(err))
@@ -198,15 +199,30 @@ func InviteUser(ctx *appcontext.Context) gin.HandlerFunc {
 			return
 		}
 
-		dbUser := entity.User{
-			Email:     request.Email,
-			Status:    "pending",
-			CompanyID: user.CompanyID,
-		}
-		if err := ctx.DB.Create(&dbUser).Error; err != nil {
-			ctx.Logger.Error("Failed to create user", zap.Error(err))
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user"})
-			return
+		var existingUser entity.User
+		if err := ctx.DB.First(&existingUser, "email = ?", request.Email).Error; err != nil {
+			dbUser := entity.User{
+				Email:     request.Email,
+				Status:    "pending",
+				CompanyID: user.CompanyID,
+				Role:      "Member",
+			}
+			if err := ctx.DB.Create(&dbUser).Error; err != nil {
+				ctx.Logger.Error("Failed to create user", zap.Error(err))
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user"})
+				return
+			}
+		} else {
+			updates := map[string]interface{}{
+				"company_id": user.CompanyID,
+				"role":       "Member",
+			}
+
+			if err := ctx.DB.Model(&existingUser).Updates(updates).Error; err != nil {
+				ctx.Logger.Error("Failed to update user details", zap.Error(err))
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update user details"})
+				return
+			}
 		}
 
 		loginURL := fmt.Sprintf("%s/login", os.Getenv("FRONTEND_HOST"))

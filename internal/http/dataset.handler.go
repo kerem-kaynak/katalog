@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/kerem-kaynak/katalog/internal/appcontext"
 	"github.com/kerem-kaynak/katalog/internal/entity"
 	"github.com/kerem-kaynak/katalog/internal/utils"
@@ -17,7 +18,13 @@ func GetDatasets(ctx *appcontext.Context) gin.HandlerFunc {
 		userID, err := utils.GetUserIDFromClaims(c)
 		if err != nil {
 			ctx.Logger.Error("Failed to get user ID from claims", zap.Error(err))
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user ID from claims"})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+			return
+		}
+
+		userHasAccess := utils.UserHasProjectAccess(ctx, userID, uuid.MustParse(projectID))
+		if !userHasAccess {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "User does not have access to this resource"})
 			return
 		}
 

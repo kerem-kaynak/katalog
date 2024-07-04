@@ -42,7 +42,13 @@ func FetchSchema(ctx *appcontext.Context) gin.HandlerFunc {
 		userID, err := utils.GetUserIDFromClaims(c)
 		if err != nil {
 			ctx.Logger.Error("Failed to get user ID from claims", zap.Error(err))
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user ID from claims"})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+			return
+		}
+
+		userHasAccess := utils.UserHasProjectAccess(ctx, userID, projectID)
+		if !userHasAccess {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "User does not have access to this resource"})
 			return
 		}
 
@@ -246,6 +252,19 @@ func FetchSchema(ctx *appcontext.Context) gin.HandlerFunc {
 func GetSyncsByProjectID(ctx *appcontext.Context) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		projectID := c.Param("projectID")
+
+		userID, err := utils.GetUserIDFromClaims(c)
+		if err != nil {
+			ctx.Logger.Error("Failed to get user ID from claims", zap.Error(err))
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+			return
+		}
+
+		userHasAccess := utils.UserHasProjectAccess(ctx, userID, uuid.MustParse(projectID))
+		if !userHasAccess {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "User does not have access to this resource"})
+			return
+		}
 
 		var syncs []entity.Sync
 		if err := ctx.DB.Where("project_id = ?", projectID).Order("created_at DESC").Limit(5).Find(&syncs).Error; err != nil {
