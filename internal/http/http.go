@@ -68,6 +68,7 @@ func (h *APIService) setupProjectRoutes(group *gin.RouterGroup) {
 	projects := group.Group("/projects")
 	projects.Use(middleware.JWTAuthMiddleware())
 
+	projects.POST("/create", CreateProject(h.context))
 	projects.GET("/", GetProjectsByUserID(h.context))
 	projects.GET("/:projectID/hasKey", GetProjectHasKey(h.context))
 }

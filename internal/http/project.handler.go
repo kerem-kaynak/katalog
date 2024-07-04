@@ -70,3 +70,44 @@ func GetProjectsByUserID(ctx *appcontext.Context) gin.HandlerFunc {
 		c.JSON(http.StatusOK, gin.H{"projects": projects})
 	}
 }
+
+func CreateProject(ctx *appcontext.Context) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		type createProjectRequest struct {
+			ProjectName string `json:"projectName" binding:"required"`
+		}
+
+		var request createProjectRequest
+		if err := c.BindJSON(&request); err != nil {
+			ctx.Logger.Error("Failed to bind request", zap.Error(err))
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to bind request"})
+			return
+		}
+
+		userID, err := utils.GetUserIDFromClaims(c)
+		if err != nil {
+			ctx.Logger.Error("Failed to get user ID from claims", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user ID from claims"})
+			return
+		}
+
+		var user entity.User
+		if err := ctx.DB.Where("id = ?", userID).First(&user).Error; err != nil {
+			ctx.Logger.Error("Failed to get user by ID", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user by ID"})
+			return
+		}
+
+		project := entity.Project{
+			Name:      request.ProjectName,
+			CompanyID: *user.CompanyID,
+		}
+
+		if err := ctx.DB.Create(&project).Error; err != nil {
+			ctx.Logger.Error("Failed to create project", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create project"})
+		}
+
+		c.JSON(http.StatusOK, gin.H{"project": project})
+	}
+}
