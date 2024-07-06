@@ -13,4 +13,5 @@ type Table struct {
 	Description string    `gorm:"type:text" json:"description"`
 	RowCount    uint64    `gorm:"type:bigint" json:"row_count"`
 	Columns     []Column  `gorm:"foreignKey:TableID" json:"columns"`
+	ToDelete    bool      `gorm:"type:boolean" json:"to_delete"`
 }

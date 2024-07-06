@@ -12,4 +12,5 @@ type Dataset struct {
 	Description string    `gorm:"type:text" json:"description"`
 	ProjectID   uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:idx_dataset_name_project" json:"project_id"`
 	Tables      []Table   `gorm:"foreignKey:DatasetID" json:"tables"`
+	ToDelete    bool      `gorm:"type:boolean" json:"to_delete"`
 }

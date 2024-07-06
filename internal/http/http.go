@@ -62,6 +62,8 @@ func (h *APIService) setupSchemaRoutes(group *gin.RouterGroup) {
 
 	schema.POST("/:projectID", FetchSchema(h.context))
 	schema.GET("/:projectID/syncs", GetSyncsByProjectID(h.context))
+	schema.GET("/:projectID/syncs/changelogs", GetSyncsWithChangelogByProjectID(h.context))
+	schema.GET("/:projectID/syncs/changelogs/:syncID", GetChangelogsBySyncID(h.context))
 }
 
 func (h *APIService) setupProjectRoutes(group *gin.RouterGroup) {

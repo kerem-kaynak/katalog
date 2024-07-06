@@ -12,4 +12,5 @@ type Column struct {
 	Type        string    `gorm:"type:varchar(255);not null" json:"type"`
 	Description string    `gorm:"type:text" json:"description"`
 	TableID     uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:idx_column_name_table" json:"table_id"`
+	ToDelete    bool      `gorm:"type:boolean" json:"to_delete"`
 }

@@ -117,6 +117,22 @@ func FetchSchema(ctx *appcontext.Context) gin.HandlerFunc {
 		tx := ctx.DB.Begin()
 		errChan := make(chan error, 1)
 
+		if err := tx.Model(&entity.Dataset{}).Where("project_id = ?", projectID).Update("to_delete", true).Error; err != nil {
+			ctx.Logger.Error("Failed to mark datasets potentially for delete", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to mark datasets potentially for delete"})
+			return
+		}
+		if err := tx.Model(&entity.Table{}).Where("dataset_id IN (SELECT id FROM datasets WHERE project_id = ?)", projectID).Update("to_delete", true).Error; err != nil {
+			ctx.Logger.Error("Failed to mark tables potentially for delete", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to mark tables potentially for delete"})
+			return
+		}
+		if err := tx.Model(&entity.Column{}).Where("table_id IN (SELECT id FROM tables WHERE dataset_id IN (SELECT id FROM datasets WHERE project_id = ?))", projectID).Update("to_delete", true).Error; err != nil {
+			ctx.Logger.Error("Failed to mark columns potentially for delete", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to mark columns potentially for delete"})
+			return
+		}
+
 		for {
 			ds, err := it.Next()
 			if err == iterator.Done {
@@ -150,6 +166,7 @@ func FetchSchema(ctx *appcontext.Context) gin.HandlerFunc {
 					DoUpdates: clause.Assignments(map[string]interface{}{
 						"description": meta.Description,
 						"updated_at":  time.Now(),
+						"to_delete":   false,
 					}),
 				}).Create(&dataset).Error; err != nil {
 					mu.Unlock()
@@ -189,6 +206,7 @@ func FetchSchema(ctx *appcontext.Context) gin.HandlerFunc {
 							"description": tblMeta.Description,
 							"row_count":   tblMeta.NumRows,
 							"updated_at":  time.Now(),
+							"to_delete":   false,
 						}),
 					}).Create(&table).Error; err != nil {
 						mu.Unlock()
@@ -212,6 +230,7 @@ func FetchSchema(ctx *appcontext.Context) gin.HandlerFunc {
 								"type":        string(fieldSchema.Type),
 								"description": fieldSchema.Description,
 								"updated_at":  time.Now(),
+								"to_delete":   false,
 							}),
 						}).Create(&column).Error; err != nil {
 							mu.Unlock()
@@ -237,6 +256,24 @@ func FetchSchema(ctx *appcontext.Context) gin.HandlerFunc {
 			return
 		}
 
+		if err := tx.Where("project_id = ? AND to_delete = ?", projectID, true).Delete(&entity.Dataset{}).Error; err != nil {
+			ctx.Logger.Error("Failed to delete datasets", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete datasets"})
+			return
+		}
+
+		if err := tx.Where("dataset_id IN (SELECT id FROM datasets WHERE project_id = ?) AND to_delete = ?", projectID, true).Delete(&entity.Table{}).Error; err != nil {
+			ctx.Logger.Error("Failed to delete tables", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete tables"})
+			return
+		}
+
+		if err := tx.Where("table_id IN (SELECT id FROM tables WHERE dataset_id IN (SELECT id FROM datasets WHERE project_id = ?)) AND to_delete = ?", projectID, true).Delete(&entity.Column{}).Error; err != nil {
+			ctx.Logger.Error("Failed to delete columns", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete columns"})
+			return
+		}
+
 		if err := tx.Commit().Error; err != nil {
 			ctx.Logger.Error("Failed to commit transaction", zap.Error(err))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to commit transaction"})
@@ -252,12 +289,6 @@ func FetchSchema(ctx *appcontext.Context) gin.HandlerFunc {
 			return
 		}
 
-		if err := utils.RecordChanges(ctx, syncID, oldState, newState); err != nil {
-			ctx.Logger.Error("Failed to record changes for changelog", zap.Error(err))
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to record changes for changelog"})
-			return
-		}
-
 		sync := entity.Sync{
 			ID:        syncID,
 			ProjectID: &projectID,
@@ -265,6 +296,12 @@ func FetchSchema(ctx *appcontext.Context) gin.HandlerFunc {
 		if err := ctx.DB.Create(&sync).Error; err != nil {
 			ctx.Logger.Error("Failed to create sync", zap.Error(err))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create sync"})
+			return
+		}
+
+		if err := utils.RecordChanges(ctx, syncID, oldState, newState); err != nil {
+			ctx.Logger.Error("Failed to record changes for changelog", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to record changes for changelog"})
 			return
 		}
 
@@ -297,5 +334,62 @@ func GetSyncsByProjectID(ctx *appcontext.Context) gin.HandlerFunc {
 		}
 
 		c.JSON(http.StatusOK, gin.H{"syncs": syncs})
+	}
+}
+
+func GetSyncsWithChangelogByProjectID(ctx *appcontext.Context) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		projectID := c.Param("projectID")
+
+		userID, err := utils.GetUserIDFromClaims(c)
+		if err != nil {
+			ctx.Logger.Error("Failed to get user ID from claims", zap.Error(err))
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+			return
+		}
+
+		userHasAccess := utils.UserHasProjectAccess(ctx, userID, uuid.MustParse(projectID))
+		if !userHasAccess {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "User does not have access to this resource"})
+			return
+		}
+
+		var syncs []entity.Sync
+		if err := ctx.DB.Preload("Changelogs").Where("project_id = ?", projectID).Order("created_at DESC").Find(&syncs).Error; err != nil {
+			ctx.Logger.Error("Failed to get syncs with changelogs from database", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get syncs with changelogs from database"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"syncs": syncs})
+	}
+}
+
+func GetChangelogsBySyncID(ctx *appcontext.Context) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		projectID := c.Param("projectID")
+		syncID := c.Param("syncID")
+
+		userID, err := utils.GetUserIDFromClaims(c)
+		if err != nil {
+			ctx.Logger.Error("Failed to get user ID from claims", zap.Error(err))
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+			return
+		}
+
+		userHasAccess := utils.UserHasProjectAccess(ctx, userID, uuid.MustParse(projectID))
+		if !userHasAccess {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "User does not have access to this resource"})
+			return
+		}
+
+		var changelogs []entity.Changelog
+		if err := ctx.DB.Where("sync_id = ?", syncID).Find(&changelogs).Error; err != nil {
+			ctx.Logger.Error("Failed to get changelogs by sync ID", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get changelogs by sync ID"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"changelogs": changelogs})
 	}
 }

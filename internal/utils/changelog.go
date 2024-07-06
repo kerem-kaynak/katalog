@@ -18,7 +18,7 @@ func contains(slice []string, item string) bool {
 	return false
 }
 
-func compareAndLogChanges(ctx *appcontext.Context, syncID uuid.UUID, entityType string, entityID uuid.UUID, oldEntity, newEntity interface{}, parentID *uuid.UUID, parentName string, grandParentID *uuid.UUID, grandParentName string) {
+func compareAndLogChanges(ctx *appcontext.Context, syncID uuid.UUID, entityType string, entityID uuid.UUID, entityName string, oldEntity, newEntity interface{}, parentID *uuid.UUID, parentName string, grandParentID *uuid.UUID, grandParentName string) {
 	oldValue := reflect.ValueOf(oldEntity)
 	newValue := reflect.ValueOf(newEntity)
 
@@ -35,6 +35,7 @@ func compareAndLogChanges(ctx *appcontext.Context, syncID uuid.UUID, entityType 
 				ChangeType:      "update",
 				EntityType:      entityType,
 				EntityID:        entityID,
+				EntityName:      entityName,
 				FieldName:       fieldName,
 				OldValue:        toJSON(oldFieldValue),
 				NewValue:        toJSON(newFieldValue),
@@ -42,7 +43,7 @@ func compareAndLogChanges(ctx *appcontext.Context, syncID uuid.UUID, entityType 
 				ParentName:      parentName,
 				GrandParentID:   grandParentID,
 				GrandParentName: grandParentName,
-				SyncID:          syncID,
+				SyncID:          &syncID,
 			}
 			ctx.DB.Create(&changelog)
 		}
@@ -75,15 +76,16 @@ func RecordChanges(ctx *appcontext.Context, syncID uuid.UUID, oldDatasets, newDa
 				ChangeType: "insert",
 				EntityType: "dataset",
 				EntityID:   newDs.ID,
+				EntityName: newDs.Name,
 				FieldName:  "",
 				OldValue:   "",
 				NewValue:   "",
 				ParentName: "",
-				SyncID:     syncID,
+				SyncID:     &syncID,
 			}
 			ctx.DB.Create(&changelog)
 		} else {
-			compareAndLogChanges(ctx, syncID, "dataset", newDs.ID, oldDs, newDs, nil, "", nil, "")
+			compareAndLogChanges(ctx, syncID, "dataset", newDs.ID, newDs.Name, oldDs, newDs, nil, "", nil, "")
 			compareTablesAndLogChanges(ctx, syncID, oldDs.Tables, newDs.Tables, newDs.ID, newDs.Name)
 		}
 		delete(oldDatasetsMap, id)
@@ -94,11 +96,12 @@ func RecordChanges(ctx *appcontext.Context, syncID uuid.UUID, oldDatasets, newDa
 			ChangeType: "delete",
 			EntityType: "dataset",
 			EntityID:   oldDs.ID,
+			EntityName: oldDs.Name,
 			FieldName:  "",
 			OldValue:   "",
 			NewValue:   "",
 			ParentName: "",
-			SyncID:     syncID,
+			SyncID:     &syncID,
 		}
 		ctx.DB.Create(&changelog)
 	}
@@ -123,16 +126,17 @@ func compareTablesAndLogChanges(ctx *appcontext.Context, syncID uuid.UUID, oldTa
 				ChangeType: "insert",
 				EntityType: "table",
 				EntityID:   newTbl.ID,
+				EntityName: newTbl.Name,
 				FieldName:  "",
 				OldValue:   "",
 				NewValue:   "",
 				ParentID:   &datasetID,
 				ParentName: datasetName,
-				SyncID:     syncID,
+				SyncID:     &syncID,
 			}
 			ctx.DB.Create(&changelog)
 		} else {
-			compareAndLogChanges(ctx, syncID, "table", newTbl.ID, oldTbl, newTbl, &datasetID, datasetName, nil, "")
+			compareAndLogChanges(ctx, syncID, "table", newTbl.ID, newTbl.Name, oldTbl, newTbl, &datasetID, datasetName, nil, "")
 			compareColumnsAndLogChanges(ctx, syncID, oldTbl.Columns, newTbl.Columns, newTbl.ID, newTbl.Name, datasetID, datasetName)
 		}
 		delete(oldTablesMap, id)
@@ -143,12 +147,13 @@ func compareTablesAndLogChanges(ctx *appcontext.Context, syncID uuid.UUID, oldTa
 			ChangeType: "delete",
 			EntityType: "table",
 			EntityID:   oldTbl.ID,
+			EntityName: oldTbl.Name,
 			FieldName:  "",
 			OldValue:   "",
 			NewValue:   "",
 			ParentID:   &datasetID,
 			ParentName: datasetName,
-			SyncID:     syncID,
+			SyncID:     &syncID,
 		}
 		ctx.DB.Create(&changelog)
 	}
@@ -171,6 +176,7 @@ func compareColumnsAndLogChanges(ctx *appcontext.Context, syncID uuid.UUID, oldC
 				ChangeType:      "insert",
 				EntityType:      "column",
 				EntityID:        newCol.ID,
+				EntityName:      newCol.Name,
 				FieldName:       "",
 				OldValue:        "",
 				NewValue:        "",
@@ -178,11 +184,11 @@ func compareColumnsAndLogChanges(ctx *appcontext.Context, syncID uuid.UUID, oldC
 				ParentName:      tableName,
 				GrandParentID:   &datasetID,
 				GrandParentName: datasetName,
-				SyncID:          syncID,
+				SyncID:          &syncID,
 			}
 			ctx.DB.Create(&changelog)
 		} else {
-			compareAndLogChanges(ctx, syncID, "column", newCol.ID, oldCol, newCol, &tableID, tableName, &datasetID, datasetName)
+			compareAndLogChanges(ctx, syncID, "column", newCol.ID, newCol.Name, oldCol, newCol, &tableID, tableName, &datasetID, datasetName)
 		}
 		delete(oldColumnsMap, id)
 	}
@@ -192,6 +198,7 @@ func compareColumnsAndLogChanges(ctx *appcontext.Context, syncID uuid.UUID, oldC
 			ChangeType:      "delete",
 			EntityType:      "column",
 			EntityID:        oldCol.ID,
+			EntityName:      oldCol.Name,
 			FieldName:       "",
 			OldValue:        "",
 			NewValue:        "",
@@ -199,7 +206,7 @@ func compareColumnsAndLogChanges(ctx *appcontext.Context, syncID uuid.UUID, oldC
 			ParentName:      tableName,
 			GrandParentID:   &datasetID,
 			GrandParentName: datasetName,
-			SyncID:          syncID,
+			SyncID:          &syncID,
 		}
 		ctx.DB.Create(&changelog)
 	}
