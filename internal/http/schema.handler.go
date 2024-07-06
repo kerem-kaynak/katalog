@@ -103,6 +103,13 @@ func FetchSchema(ctx *appcontext.Context) gin.HandlerFunc {
 		}
 		defer client.Close()
 
+		oldState, err := utils.FetchCurrentState(ctx, projectID)
+		if err != nil {
+			ctx.Logger.Error("Failed to fetch old state for changelog", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch old state for changelog"})
+			return
+		}
+
 		it := client.Datasets(context.Background())
 
 		var wg sync.WaitGroup
@@ -236,7 +243,23 @@ func FetchSchema(ctx *appcontext.Context) gin.HandlerFunc {
 			return
 		}
 
+		syncID := uuid.New()
+
+		newState, err := utils.FetchCurrentState(ctx, projectID)
+		if err != nil {
+			ctx.Logger.Error("Failed to fetch new state for changelog", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch new state for changelog"})
+			return
+		}
+
+		if err := utils.RecordChanges(ctx, syncID, oldState, newState); err != nil {
+			ctx.Logger.Error("Failed to record changes for changelog", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to record changes for changelog"})
+			return
+		}
+
 		sync := entity.Sync{
+			ID:        syncID,
 			ProjectID: &projectID,
 		}
 		if err := ctx.DB.Create(&sync).Error; err != nil {
