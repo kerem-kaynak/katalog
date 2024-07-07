@@ -38,6 +38,7 @@ func (h *APIService) setupRoutes() {
 	h.setupFileRoutes(v1)
 	h.setupSchemaRoutes(v1)
 	h.setupCompanyRoutes(v1)
+	h.setupAnalyticsRoutes(v1)
 
 	h.engine.Static("/static", "./static")
 	h.engine.GET("/", func(c *gin.Context) {
@@ -64,6 +65,13 @@ func (h *APIService) setupSchemaRoutes(group *gin.RouterGroup) {
 	schema.GET("/:projectID/syncs", GetSyncsByProjectID(h.context))
 	schema.GET("/:projectID/syncs/changelogs", GetSyncsWithChangelogByProjectID(h.context))
 	schema.GET("/:projectID/syncs/changelogs/:syncID", GetChangelogsBySyncID(h.context))
+}
+
+func (h *APIService) setupAnalyticsRoutes(group *gin.RouterGroup) {
+	analytics := group.Group("/analytics")
+	analytics.Use(middleware.JWTAuthMiddleware())
+
+	analytics.GET("/:projectID/dashboard", GetDashboardStatistics(h.context))
 }
 
 func (h *APIService) setupProjectRoutes(group *gin.RouterGroup) {
