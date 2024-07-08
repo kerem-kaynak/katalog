@@ -31,7 +31,7 @@ func Callback(ctx *appcontext.Context) gin.HandlerFunc {
 		token, err := ctx.OAuth2Config.Exchange(context.Background(), code)
 		if err != nil {
 			ctx.Logger.Error("Failed to exchange token", zap.Error(err))
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to exchange token"})
+			c.Redirect(http.StatusTemporaryRedirect, "http://localhost:3000/login")
 			return
 		}
 
