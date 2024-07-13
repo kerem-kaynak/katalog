@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"context"
@@ -11,6 +12,7 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/kerem-kaynak/katalog/internal/appcontext"
 	"github.com/kerem-kaynak/katalog/internal/entity"
+	"github.com/meilisearch/meilisearch-go"
 	"go.uber.org/zap"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
@@ -39,6 +41,11 @@ func InitContext() (*appcontext.Context, error) {
 		return nil, err
 	}
 
+	meilisearchClient, err := InitMeilisearch()
+	if err != nil {
+		return nil, err
+	}
+
 	oauth2Config := &oauth2.Config{
 		ClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
 		ClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
@@ -58,7 +65,8 @@ func InitContext() (*appcontext.Context, error) {
 		GCPProjectID:  os.Getenv("GCP_PROJECT_ID"),
 		GCSBucketName: os.Getenv("GCS_BUCKET_NAME"),
 
-		OAuth2Config: oauth2Config,
+		OAuth2Config:      oauth2Config,
+		MeilisearchClient: meilisearchClient,
 	}
 
 	return ctx, nil
@@ -110,5 +118,60 @@ func InitGCSClient() (*storage.Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize GCS client: %w", err)
 	}
+	return client, nil
+}
+
+func InitMeilisearch() (*meilisearch.Client, error) {
+	client := meilisearch.NewClient(meilisearch.ClientConfig{
+		Host: "http://host.docker.internal:7700",
+	})
+
+	_, err := client.CreateIndex(&meilisearch.IndexConfig{
+		Uid:        "resources",
+		PrimaryKey: "id",
+	})
+	if err != nil {
+		// If the error is because the index already exists, that's fine
+		if strings.Contains(err.Error(), "already exists") {
+			// Index already exists, continue with updating settings
+		} else {
+			return nil, fmt.Errorf("failed to create index: %w", err)
+		}
+	}
+
+	// Set filterable attributes
+	task, err := client.Index("resources").UpdateFilterableAttributes(&[]string{
+		"project_id",
+		"type",
+		"dataset_id",
+		"table_id",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to update filterable attributes: %w", err)
+	}
+
+	// Wait for the task to complete
+	_, err = client.WaitForTask(task.TaskUID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to wait for filterable attributes update: %w", err)
+	}
+
+	// Set searchable attributes
+	task, err = client.Index("resources").UpdateSearchableAttributes(&[]string{
+		"name",
+		"description",
+		"type",
+		"column_type",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to update searchable attributes: %w", err)
+	}
+
+	// Wait for the task to complete
+	_, err = client.WaitForTask(task.TaskUID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to wait for searchable attributes update: %w", err)
+	}
+
 	return client, nil
 }

@@ -133,6 +133,8 @@ func FetchSchema(ctx *appcontext.Context) gin.HandlerFunc {
 			return
 		}
 
+		var documentsToIndex []map[string]interface{}
+
 		for {
 			ds, err := it.Next()
 			if err == iterator.Done {
@@ -175,6 +177,11 @@ func FetchSchema(ctx *appcontext.Context) gin.HandlerFunc {
 				}
 				mu.Unlock()
 
+				datasetDoc := utils.DatasetToDocument(&dataset)
+				mu.Lock()
+				documentsToIndex = append(documentsToIndex, datasetDoc)
+				mu.Unlock()
+
 				tblIt := ds.Tables(context.Background())
 				for {
 					tbl, err := tblIt.Next()
@@ -215,6 +222,15 @@ func FetchSchema(ctx *appcontext.Context) gin.HandlerFunc {
 					}
 					mu.Unlock()
 
+					tableDoc, err := utils.TableToDocument(tx, &table)
+					if err != nil {
+						ctx.Logger.Error("Failed to create table document", zap.Error(err), zap.String("table_id", table.ID.String()))
+					} else {
+						mu.Lock()
+						documentsToIndex = append(documentsToIndex, tableDoc)
+						mu.Unlock()
+					}
+
 					for _, fieldSchema := range tblMeta.Schema {
 						column := entity.Column{
 							Name:        fieldSchema.Name,
@@ -238,6 +254,15 @@ func FetchSchema(ctx *appcontext.Context) gin.HandlerFunc {
 							return
 						}
 						mu.Unlock()
+
+						columnDoc, err := utils.ColumnToDocument(tx, &column)
+						if err != nil {
+							ctx.Logger.Error("Failed to create column document", zap.Error(err), zap.String("column_id", column.ID.String()))
+						} else {
+							mu.Lock()
+							documentsToIndex = append(documentsToIndex, columnDoc)
+							mu.Unlock()
+						}
 					}
 				}
 			}(ds)
@@ -253,6 +278,28 @@ func FetchSchema(ctx *appcontext.Context) gin.HandlerFunc {
 			tx.Rollback()
 			ctx.Logger.Error("Failed to fetch schema", zap.Error(err))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch schema"})
+			return
+		}
+
+		// Handle deletions
+		var datasetsToDelete []entity.Dataset
+		if err := tx.Where("project_id = ? AND to_delete = ?", projectID, true).Find(&datasetsToDelete).Error; err != nil {
+			ctx.Logger.Error("Failed to fetch datasets to delete", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch datasets to delete"})
+			return
+		}
+
+		var tablesToDelete []entity.Table
+		if err := tx.Where("dataset_id IN (SELECT id FROM datasets WHERE project_id = ?) AND to_delete = ?", projectID, true).Find(&tablesToDelete).Error; err != nil {
+			ctx.Logger.Error("Failed to fetch tables to delete", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch tables to delete"})
+			return
+		}
+
+		var columnsToDelete []entity.Column
+		if err := tx.Where("table_id IN (SELECT id FROM tables WHERE dataset_id IN (SELECT id FROM datasets WHERE project_id = ?)) AND to_delete = ?", projectID, true).Find(&columnsToDelete).Error; err != nil {
+			ctx.Logger.Error("Failed to fetch columns to delete", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch columns to delete"})
 			return
 		}
 
@@ -280,6 +327,35 @@ func FetchSchema(ctx *appcontext.Context) gin.HandlerFunc {
 			return
 		}
 
+		// Batch index documents
+		if len(documentsToIndex) > 0 {
+			_, err := ctx.MeilisearchClient.Index("resources").AddDocuments(documentsToIndex, "id")
+			if err != nil {
+				ctx.Logger.Error("Failed to batch index documents", zap.Error(err))
+				// Continue execution, as the database transaction was successful
+			}
+		}
+
+		// Remove deleted documents from index
+		var idsToDelete []string
+		for _, dataset := range datasetsToDelete {
+			idsToDelete = append(idsToDelete, dataset.ID.String())
+		}
+		for _, table := range tablesToDelete {
+			idsToDelete = append(idsToDelete, table.ID.String())
+		}
+		for _, column := range columnsToDelete {
+			idsToDelete = append(idsToDelete, column.ID.String())
+		}
+
+		if len(idsToDelete) > 0 {
+			_, err := ctx.MeilisearchClient.Index("resources").DeleteDocuments(idsToDelete)
+			if err != nil {
+				ctx.Logger.Error("Failed to delete documents from index", zap.Error(err))
+				// Continue execution, as the database transaction was successful
+			}
+		}
+
 		syncID := uuid.New()
 
 		newState, err := utils.FetchCurrentState(ctx, projectID)
@@ -295,7 +371,7 @@ func FetchSchema(ctx *appcontext.Context) gin.HandlerFunc {
 		}
 		if err := ctx.DB.Create(&sync).Error; err != nil {
 			ctx.Logger.Error("Failed to create sync", zap.Error(err))
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create sync"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create sync"})
 			return
 		}
 

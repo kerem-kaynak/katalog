@@ -39,6 +39,7 @@ func (h *APIService) setupRoutes() {
 	h.setupSchemaRoutes(v1)
 	h.setupCompanyRoutes(v1)
 	h.setupAnalyticsRoutes(v1)
+	h.setupSearchRoutes(v1)
 
 	h.engine.Static("/static", "./static")
 	h.engine.GET("/", func(c *gin.Context) {
@@ -118,4 +119,11 @@ func (h *APIService) setupCompanyRoutes(group *gin.RouterGroup) {
 
 	companies.POST("/create", CreateCompany(h.context))
 	companies.GET("/members", GetCompanyMembers(h.context))
+}
+
+func (h *APIService) setupSearchRoutes(group *gin.RouterGroup) {
+	search := group.Group("/search")
+	search.Use(middleware.JWTAuthMiddleware())
+
+	search.GET("/", SearchResources(h.context))
 }
