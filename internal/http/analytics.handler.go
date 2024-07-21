@@ -29,6 +29,12 @@ func GetDashboardStatistics(ctx *appcontext.Context) gin.HandlerFunc {
 			return
 		}
 
+		projectHasSync := utils.ProjectHasSync(ctx, uuid.MustParse(projectID))
+		if !projectHasSync {
+			c.JSON(http.StatusOK, gin.H{"userHasSync": false})
+			return
+		}
+
 		now := time.Now()
 		currentMonthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
 		pastMonthStart := currentMonthStart.AddDate(0, -1, 0)
@@ -168,6 +174,7 @@ func GetDashboardStatistics(ctx *appcontext.Context) gin.HandlerFunc {
 
 		// Prepare the response structure
 		response := gin.H{
+			"userHasSync":              true,
 			"totalDatasetCount":        totalDatasetCount,
 			"totalTableCount":          totalTableCount,
 			"totalColumnCount":         totalColumnCount,

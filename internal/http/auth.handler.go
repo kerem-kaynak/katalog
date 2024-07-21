@@ -27,11 +27,16 @@ func Login(ctx *appcontext.Context) gin.HandlerFunc {
 
 func Callback(ctx *appcontext.Context) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		frontendHost := os.Getenv("FRONTEND_HOST")
+		if frontendHost == "" {
+			frontendHost = "https://app.katalog.so"
+		}
+
 		code := c.Query("code")
 		token, err := ctx.OAuth2Config.Exchange(context.Background(), code)
 		if err != nil {
 			ctx.Logger.Error("Failed to exchange token", zap.Error(err))
-			c.Redirect(http.StatusTemporaryRedirect, "http://localhost:3000/login")
+			c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/login", frontendHost))
 			return
 		}
 
@@ -99,7 +104,7 @@ func Callback(ctx *appcontext.Context) gin.HandlerFunc {
 			return
 		}
 
-		c.Redirect(http.StatusTemporaryRedirect, "http://localhost:3000/company/create?token="+tokenString)
+		c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/company/create?token=%s", frontendHost, tokenString))
 	}
 }
 

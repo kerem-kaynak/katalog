@@ -1,6 +1,8 @@
 package http
 
 import (
+	"net/http"
+
 	"github.com/gin-gonic/gin"
 	"github.com/kerem-kaynak/katalog/internal/appcontext"
 	"github.com/kerem-kaynak/katalog/internal/http/middleware"
@@ -29,6 +31,8 @@ func (h *APIService) Engine() *gin.Engine {
 }
 
 func (h *APIService) setupRoutes() {
+	h.engine.GET("/health", h.healthCheck)
+
 	v1 := h.engine.Group("/api/v1")
 	h.setupAuthRoutes(v1)
 	h.setupProjectRoutes(v1)
@@ -40,10 +44,11 @@ func (h *APIService) setupRoutes() {
 	h.setupCompanyRoutes(v1)
 	h.setupAnalyticsRoutes(v1)
 	h.setupSearchRoutes(v1)
+}
 
-	h.engine.Static("/static", "./static")
-	h.engine.GET("/", func(c *gin.Context) {
-		c.File("./static/index.html")
+func (h *APIService) healthCheck(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"status": "ok",
 	})
 }
 

@@ -65,3 +65,12 @@ func UserHasTableAccess(ctx *appcontext.Context, userID uuid.UUID, tableID uuid.
 
 	return true
 }
+
+func ProjectHasSync(ctx *appcontext.Context, projectID uuid.UUID) bool {
+	var sync entity.Sync
+	if err := ctx.DB.Where("project_id = ?", projectID).First(&sync).Error; err != nil {
+		return false
+	}
+
+	return true
+}

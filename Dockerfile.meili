@@ -1,0 +1,8 @@
+# Use the official Meilisearch image as a base
+FROM getmeili/meilisearch:latest
+
+# Expose the Meilisearch port
+EXPOSE 7700
+
+# Start Meilisearch
+CMD ["meilisearch"]

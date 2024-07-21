@@ -3,7 +3,6 @@ package config
 import (
 	"fmt"
 	"os"
-	"strings"
 	"time"
 
 	"context"
@@ -105,7 +104,9 @@ func InitDB() (*gorm.DB, error) {
 }
 
 func InitLogger() (*zap.Logger, error) {
-	logger, err := zap.NewProduction()
+	config := zap.NewProductionConfig()
+	config.OutputPaths = []string{"stdout"}
+	logger, err := config.Build()
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize logger: %w", err)
 	}
@@ -122,22 +123,27 @@ func InitGCSClient() (*storage.Client, error) {
 }
 
 func InitMeilisearch() (*meilisearch.Client, error) {
+	meilisearchHost := os.Getenv("MEILISEARCH_HOST")
+	if meilisearchHost == "" {
+		meilisearchHost = "http://host.docker.internal:7700" // default value
+	}
+
 	client := meilisearch.NewClient(meilisearch.ClientConfig{
-		Host: "http://host.docker.internal:7700",
+		Host: meilisearchHost,
 	})
 
-	_, err := client.CreateIndex(&meilisearch.IndexConfig{
-		Uid:        "resources",
-		PrimaryKey: "id",
-	})
-	if err != nil {
-		// If the error is because the index already exists, that's fine
-		if strings.Contains(err.Error(), "already exists") {
-			// Index already exists, continue with updating settings
-		} else {
-			return nil, fmt.Errorf("failed to create index: %w", err)
-		}
-	}
+	// _, err := client.CreateIndex(&meilisearch.IndexConfig{
+	// 	Uid:        "resources",
+	// 	PrimaryKey: "id",
+	// })
+	// if err != nil {
+	// 	// If the error is because the index already exists, that's fine
+	// 	if strings.Contains(err.Error(), "already exists") {
+	// 		// Index already exists, continue with updating settings
+	// 	} else {
+	// 		return nil, fmt.Errorf("failed to create index: %w", err)
+	// 	}
+	// }
 
 	// Set filterable attributes
 	task, err := client.Index("resources").UpdateFilterableAttributes(&[]string{

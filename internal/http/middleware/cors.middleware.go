@@ -10,6 +10,10 @@ import (
 func CORSMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		environment := os.Getenv("ENVIRONMENT")
+		frontendHost := os.Getenv("FRONTEND_HOST")
+		if frontendHost == "" {
+			frontendHost = "http://localhost:3000" // default value
+		}
 
 		if environment == "production" {
 			allowedOrigins := strings.Split(os.Getenv("ALLOWED_ORIGINS"), ",")
@@ -19,7 +23,7 @@ func CORSMiddleware() gin.HandlerFunc {
 				c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
 			}
 		} else {
-			c.Writer.Header().Set("Access-Control-Allow-Origin", "http://localhost:3000")
+			c.Writer.Header().Set("Access-Control-Allow-Origin", frontendHost)
 		}
 
 		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")

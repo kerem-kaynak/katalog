@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"sync"
 	"time"
 
 	"cloud.google.com/go/bigquery"
@@ -112,22 +111,33 @@ func FetchSchema(ctx *appcontext.Context) gin.HandlerFunc {
 
 		it := client.Datasets(context.Background())
 
-		var wg sync.WaitGroup
-		var mu sync.Mutex
 		tx := ctx.DB.Begin()
-		errChan := make(chan error, 1)
+		if err := tx.Error; err != nil {
+			ctx.Logger.Error("Failed to begin transaction", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to begin transaction"})
+			return
+		}
+
+		defer func() {
+			if r := recover(); r != nil {
+				tx.Rollback()
+			}
+		}()
 
 		if err := tx.Model(&entity.Dataset{}).Where("project_id = ?", projectID).Update("to_delete", true).Error; err != nil {
+			tx.Rollback()
 			ctx.Logger.Error("Failed to mark datasets potentially for delete", zap.Error(err))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to mark datasets potentially for delete"})
 			return
 		}
 		if err := tx.Model(&entity.Table{}).Where("dataset_id IN (SELECT id FROM datasets WHERE project_id = ?)", projectID).Update("to_delete", true).Error; err != nil {
+			tx.Rollback()
 			ctx.Logger.Error("Failed to mark tables potentially for delete", zap.Error(err))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to mark tables potentially for delete"})
 			return
 		}
 		if err := tx.Model(&entity.Column{}).Where("table_id IN (SELECT id FROM tables WHERE dataset_id IN (SELECT id FROM datasets WHERE project_id = ?))", projectID).Update("to_delete", true).Error; err != nil {
+			tx.Rollback()
 			ctx.Logger.Error("Failed to mark columns potentially for delete", zap.Error(err))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to mark columns potentially for delete"})
 			return
@@ -141,149 +151,130 @@ func FetchSchema(ctx *appcontext.Context) gin.HandlerFunc {
 				break
 			}
 			if err != nil {
+				tx.Rollback()
 				ctx.Logger.Error("Failed to fetch datasets", zap.Error(err))
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch datasets"})
 				return
 			}
 
-			wg.Add(1)
-			go func(ds *bigquery.Dataset) {
-				defer wg.Done()
+			meta, err := ds.Metadata(context.Background())
+			if err != nil {
+				tx.Rollback()
+				ctx.Logger.Error("Failed to fetch dataset metadata", zap.Error(err))
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch dataset metadata"})
+				return
+			}
 
-				meta, err := ds.Metadata(context.Background())
+			dataset := entity.Dataset{
+				Name:        ds.DatasetID,
+				ProjectID:   projectID,
+				Description: meta.Description,
+			}
+
+			if err := tx.Clauses(clause.OnConflict{
+				Columns: []clause.Column{{Name: "name"}, {Name: "project_id"}},
+				DoUpdates: clause.Assignments(map[string]interface{}{
+					"description": meta.Description,
+					"updated_at":  time.Now(),
+					"to_delete":   false,
+				}),
+			}).Create(&dataset).Error; err != nil {
+				tx.Rollback()
+				ctx.Logger.Error("Failed to create or update dataset", zap.Error(err))
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create or update dataset"})
+				return
+			}
+
+			datasetDoc := utils.DatasetToDocument(&dataset)
+			documentsToIndex = append(documentsToIndex, datasetDoc)
+
+			tblIt := ds.Tables(context.Background())
+			for {
+				tbl, err := tblIt.Next()
+				if err == iterator.Done {
+					break
+				}
 				if err != nil {
-					errChan <- err
+					tx.Rollback()
+					ctx.Logger.Error("Failed to fetch tables", zap.Error(err))
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch tables"})
 					return
 				}
 
-				dataset := entity.Dataset{
-					Name:        ds.DatasetID,
-					ProjectID:   projectID,
-					Description: meta.Description,
+				tblMeta, err := tbl.Metadata(context.Background())
+				if err != nil {
+					tx.Rollback()
+					ctx.Logger.Error("Failed to fetch table metadata", zap.Error(err))
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch table metadata"})
+					return
 				}
 
-				mu.Lock()
+				table := entity.Table{
+					Name:        tbl.TableID,
+					DatasetID:   dataset.ID,
+					Description: tblMeta.Description,
+					RowCount:    tblMeta.NumRows,
+				}
+
 				if err := tx.Clauses(clause.OnConflict{
-					Columns: []clause.Column{{Name: "name"}, {Name: "project_id"}},
+					Columns: []clause.Column{{Name: "name"}, {Name: "dataset_id"}},
 					DoUpdates: clause.Assignments(map[string]interface{}{
-						"description": meta.Description,
+						"description": tblMeta.Description,
+						"row_count":   tblMeta.NumRows,
 						"updated_at":  time.Now(),
 						"to_delete":   false,
 					}),
-				}).Create(&dataset).Error; err != nil {
-					mu.Unlock()
-					errChan <- err
+				}).Create(&table).Error; err != nil {
+					tx.Rollback()
+					ctx.Logger.Error("Failed to create or update table", zap.Error(err))
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create or update table"})
 					return
 				}
-				mu.Unlock()
 
-				datasetDoc := utils.DatasetToDocument(&dataset)
-				mu.Lock()
-				documentsToIndex = append(documentsToIndex, datasetDoc)
-				mu.Unlock()
+				tableDoc, err := utils.TableToDocument(tx, &table)
+				if err != nil {
+					ctx.Logger.Error("Failed to create table document", zap.Error(err), zap.String("table_id", table.ID.String()))
+				} else {
+					documentsToIndex = append(documentsToIndex, tableDoc)
+				}
 
-				tblIt := ds.Tables(context.Background())
-				for {
-					tbl, err := tblIt.Next()
-					if err == iterator.Done {
-						break
-					}
-					if err != nil {
-						errChan <- err
-						return
+				for _, fieldSchema := range tblMeta.Schema {
+					column := entity.Column{
+						Name:        fieldSchema.Name,
+						Type:        string(fieldSchema.Type),
+						Description: fieldSchema.Description,
+						TableID:     table.ID,
 					}
 
-					tblMeta, err := tbl.Metadata(context.Background())
-					if err != nil {
-						errChan <- err
-						return
-					}
-
-					table := entity.Table{
-						Name:        tbl.TableID,
-						DatasetID:   dataset.ID,
-						Description: tblMeta.Description,
-						RowCount:    tblMeta.NumRows,
-					}
-
-					mu.Lock()
 					if err := tx.Clauses(clause.OnConflict{
-						Columns: []clause.Column{{Name: "name"}, {Name: "dataset_id"}},
+						Columns: []clause.Column{{Name: "name"}, {Name: "table_id"}},
 						DoUpdates: clause.Assignments(map[string]interface{}{
-							"description": tblMeta.Description,
-							"row_count":   tblMeta.NumRows,
+							"type":        string(fieldSchema.Type),
+							"description": fieldSchema.Description,
 							"updated_at":  time.Now(),
 							"to_delete":   false,
 						}),
-					}).Create(&table).Error; err != nil {
-						mu.Unlock()
-						errChan <- err
+					}).Create(&column).Error; err != nil {
+						tx.Rollback()
+						ctx.Logger.Error("Failed to create or update column", zap.Error(err))
+						c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create or update column"})
 						return
 					}
-					mu.Unlock()
 
-					tableDoc, err := utils.TableToDocument(tx, &table)
+					columnDoc, err := utils.ColumnToDocument(tx, &column)
 					if err != nil {
-						ctx.Logger.Error("Failed to create table document", zap.Error(err), zap.String("table_id", table.ID.String()))
+						ctx.Logger.Error("Failed to create column document", zap.Error(err), zap.String("column_id", column.ID.String()))
 					} else {
-						mu.Lock()
-						documentsToIndex = append(documentsToIndex, tableDoc)
-						mu.Unlock()
-					}
-
-					for _, fieldSchema := range tblMeta.Schema {
-						column := entity.Column{
-							Name:        fieldSchema.Name,
-							Type:        string(fieldSchema.Type),
-							Description: fieldSchema.Description,
-							TableID:     table.ID,
-						}
-
-						mu.Lock()
-						if err := tx.Clauses(clause.OnConflict{
-							Columns: []clause.Column{{Name: "name"}, {Name: "table_id"}},
-							DoUpdates: clause.Assignments(map[string]interface{}{
-								"type":        string(fieldSchema.Type),
-								"description": fieldSchema.Description,
-								"updated_at":  time.Now(),
-								"to_delete":   false,
-							}),
-						}).Create(&column).Error; err != nil {
-							mu.Unlock()
-							errChan <- err
-							return
-						}
-						mu.Unlock()
-
-						columnDoc, err := utils.ColumnToDocument(tx, &column)
-						if err != nil {
-							ctx.Logger.Error("Failed to create column document", zap.Error(err), zap.String("column_id", column.ID.String()))
-						} else {
-							mu.Lock()
-							documentsToIndex = append(documentsToIndex, columnDoc)
-							mu.Unlock()
-						}
+						documentsToIndex = append(documentsToIndex, columnDoc)
 					}
 				}
-			}(ds)
-		}
-
-		go func() {
-			wg.Wait()
-			close(errChan)
-		}()
-
-		err = <-errChan
-		if err != nil {
-			tx.Rollback()
-			ctx.Logger.Error("Failed to fetch schema", zap.Error(err))
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch schema"})
-			return
+			}
 		}
 
 		// Handle deletions
 		var datasetsToDelete []entity.Dataset
 		if err := tx.Where("project_id = ? AND to_delete = ?", projectID, true).Find(&datasetsToDelete).Error; err != nil {
+			tx.Rollback()
 			ctx.Logger.Error("Failed to fetch datasets to delete", zap.Error(err))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch datasets to delete"})
 			return
@@ -291,6 +282,7 @@ func FetchSchema(ctx *appcontext.Context) gin.HandlerFunc {
 
 		var tablesToDelete []entity.Table
 		if err := tx.Where("dataset_id IN (SELECT id FROM datasets WHERE project_id = ?) AND to_delete = ?", projectID, true).Find(&tablesToDelete).Error; err != nil {
+			tx.Rollback()
 			ctx.Logger.Error("Failed to fetch tables to delete", zap.Error(err))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch tables to delete"})
 			return
@@ -298,24 +290,28 @@ func FetchSchema(ctx *appcontext.Context) gin.HandlerFunc {
 
 		var columnsToDelete []entity.Column
 		if err := tx.Where("table_id IN (SELECT id FROM tables WHERE dataset_id IN (SELECT id FROM datasets WHERE project_id = ?)) AND to_delete = ?", projectID, true).Find(&columnsToDelete).Error; err != nil {
+			tx.Rollback()
 			ctx.Logger.Error("Failed to fetch columns to delete", zap.Error(err))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch columns to delete"})
 			return
 		}
 
 		if err := tx.Where("project_id = ? AND to_delete = ?", projectID, true).Delete(&entity.Dataset{}).Error; err != nil {
+			tx.Rollback()
 			ctx.Logger.Error("Failed to delete datasets", zap.Error(err))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete datasets"})
 			return
 		}
 
 		if err := tx.Where("dataset_id IN (SELECT id FROM datasets WHERE project_id = ?) AND to_delete = ?", projectID, true).Delete(&entity.Table{}).Error; err != nil {
+			tx.Rollback()
 			ctx.Logger.Error("Failed to delete tables", zap.Error(err))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete tables"})
 			return
 		}
 
 		if err := tx.Where("table_id IN (SELECT id FROM tables WHERE dataset_id IN (SELECT id FROM datasets WHERE project_id = ?)) AND to_delete = ?", projectID, true).Delete(&entity.Column{}).Error; err != nil {
+			tx.Rollback()
 			ctx.Logger.Error("Failed to delete columns", zap.Error(err))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete columns"})
 			return
